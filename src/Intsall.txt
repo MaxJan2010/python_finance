@@ -1,2 +1,3 @@
 pip install pandas
 pip install MetaTrader5
+pip install plotly

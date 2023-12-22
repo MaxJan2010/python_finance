@@ -1,6 +1,7 @@
 import MetaTrader5 as mt5
 import pandas as pd
 
+from broker.broker_data import *
 from credential.mt5_credential import *
 from orders.limit_orders import *
 from orders.market_order import *
@@ -9,8 +10,10 @@ from orders.get_open_positions import *
 # Connect To MetaTrader5
 mt5.initialize()
 
-#  Login To MetaTrader5
-mt5.login(login=login, password=password, server=server)
+mt5_login()
+
+# get_broker_data()
+symbol_data("EURUSD")
 
 # buy_limit("EURUSD", 0.01, 1.0650)
 # sell_limit("EURUSD", 0.01, 1.0950)
@@ -33,4 +36,4 @@ mt5.login(login=login, password=password, server=server)
 
 # calc_total_percentage_profit_symbol('EURUSD')
 
-close_all_positions_symbol('EURUSD')
+# close_all_positions_symbol('EURUSD')
