@@ -1,7 +1,12 @@
 import MetaTrader5 as mt5
 import pandas as pd
 
-# get open positions on symbol
+# Get Total QTY of open positions
+def get_total_QTY_open_positions():
+    positions = mt5.positions_total()
+    print(positions)
+
+# Get open positions on symbol
 def get_open_positions_symbol(symbol):
     positions = mt5.positions_get(symbol=symbol)
     if not positions:
@@ -12,7 +17,7 @@ def get_open_positions_symbol(symbol):
         for position in positions:
             print(position)
 
-# get the list of positions on symbol whose names contain "*USD*"
+# Get the list of positions on symbol whose names contain "*USD*"
 def get_open_positions_currency(currency):
     currency_positions = mt5.positions_get(group=currency)
     if not currency_positions:

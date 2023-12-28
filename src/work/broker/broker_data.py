@@ -26,6 +26,7 @@ def symbol_data(symbol):
                              mt5.TIMEFRAME_D1,
                              datetime(2021, 1, 1),
                              datetime.now()))
+    ohlc_data['time'] = pd.to_datetime(ohlc_data['time'], unit='s')
     print(ohlc_data)
     # Plot Specific Symbol Chart (Time VS Close)
     # figure = px.line(ohlc_data, x=ohlc_data['time'], y=ohlc_data['close'])
@@ -36,6 +37,7 @@ def symbol_data(symbol):
                              datetime(2021, 1, 1),
                              datetime.now(),
                              mt5.COPY_TICKS_ALL))
+    tick_data['time'] = pd.to_datetime(tick_data['time'], unit='s')
     print(tick_data)
     # Plot Specific Symbol Chart (Time VS Close)
     figure = px.line(tick_data, x=tick_data['time'], y=[tick_data['bid'], tick_data['ask']])
