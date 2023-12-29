@@ -11,14 +11,14 @@ def market_order(symbol, volume, order_type):
         "volume": volume,
         "type": order_dict[order_type],
         "price": price_dict[order_type],
-        # "sl": price - 100 * point,
-        # "tp": price + 100 * point,
+        "sl": 0.00,
+        "tp": 0.00,
         "deviation": 20,
         "magic": 100,
         "comment": "python script open",
         "type_time": mt5.ORDER_TIME_GTC,
-        # "type_filling": mt5.ORDER_FILLING_IOC,
-        "type_filling": mt5.ORDER_FILLING_FOK,
+        "type_filling": mt5.ORDER_FILLING_IOC,
+        # "type_filling": mt5.ORDER_FILLING_FOK,
     }
     order_result = mt5.order_send(request)
 
