@@ -15,6 +15,8 @@ from datetime import datetime, timedelta
 from src.work.credential.mt5_credential import *
 from src.work.orders.market_order import *
 
+
+
 # Connect To MetaTrader5
 mt5.initialize()
 
@@ -75,7 +77,7 @@ print(pre_last_signal)
 
 # Strategy Logic
 if last_signal == None:
-    if pre_last_signal == None:
+    if pre_last_signal == None or pre_last_signal == 'buy':
         print("Both are NONE")
         market_order("GBPUSD", 0.03, 'buy')
 else:

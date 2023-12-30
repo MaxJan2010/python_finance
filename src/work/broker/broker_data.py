@@ -3,6 +3,7 @@ import pandas as pd
 import plotly.express as px
 from datetime import datetime
 
+
 def get_broker_data():
     # Get QTY of Symbols Available within the Broker
     symbol_qty = mt5.symbols_total()
@@ -11,6 +12,7 @@ def get_broker_data():
     # Get Lit of all available symbols
     symbols = mt5.symbols_get()
     print("symbols = ", symbols)
+
 
 def symbol_data(symbol):
     # Get Specific Symbol Specifications
