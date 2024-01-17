@@ -1,7 +1,7 @@
 pip install pandas
 pip install MetaTrader5
 pip install ipykernel
-pip install plotly
+pip install plotly ipython  --upgrade nbformat
 pip install ipython
 
 pip install --upgrade nbformat
