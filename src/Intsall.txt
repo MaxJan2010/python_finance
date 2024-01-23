@@ -5,3 +5,6 @@ pip install plotly ipython  --upgrade nbformat
 pip install ipython
 
 pip install --upgrade nbformat
+
+home = C:\Users\Mohamed El Kayal\AppData\Local\Programs\Python\Python311  hp
+home = C:\Users\MOHAMEDABBAS\AppData\Local\Programs\Python\Python37-32  dell
