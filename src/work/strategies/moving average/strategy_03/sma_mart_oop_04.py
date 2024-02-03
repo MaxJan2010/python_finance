@@ -60,25 +60,43 @@ class BackTester:
         self.decimal_factor = decimal_factor
         self.min_lot = min_lot
         self.martingale_multiplier = martingale_multiplier
-
-    def calc_indicator_ma(self, window):
-        return self.data['close'].rolling(window=window).mean()
-
-    def create_signals(self, ma_fast, ma_slow):
-        # self.data['MA_Fast'] = self.calc_indicator_ma(ma_fast)
-        # self.data['MA_Slow'] = self.calc_indicator_ma(ma_slow)
-        # self.data['Signal'] = None
-        # self.data.loc[self.data['MA_Fast'] > self.data['MA_Slow'], 'signal'] = 'buy'  # Buy
-        # self.data.loc[self.data['MA_Fast'] < self.data['MA_Slow'], 'signal'] = 'sell'  # Sell
-        # self.data['signal'] = self.data['signal'].shift(1)
-        # self.data.dropna(inplace=True)
         
-        self.data['signal'] = None
-        self.data.loc[self.calc_indicator_ma(ma_fast) > self.calc_indicator_ma(ma_slow), 'signal'] = 'buy'  # Buy
-        self.data.loc[self.calc_indicator_ma(ma_fast) < self.calc_indicator_ma(ma_slow), 'signal'] = 'sell'  # Sell
-        self.data['signal'] = self.data['signal'].shift(1)
+    def indicator_sma(self, ma_fast, ma_slow):
+        self.data['v_fast_sma'] = ma_fast
+        self.data['v_slow_sma'] = ma_slow
+        self.data['fast_sma'] = self.data['close'].rolling(ma_fast).mean()
+        self.data['slow_sma'] = self.data['close'].rolling(ma_slow).mean()
+
         self.data.dropna(inplace=True)
+        print(self.data)
         return self.data
+    
+    def create_signals(self):
+        conditions_signal = [
+            self.data['fast_sma'].gt(self.data['slow_sma']), # up signal
+            self.data['fast_sma'].lt(self.data['slow_sma']), # down signal
+        ]
+
+        choices_signal = [
+            'buy', 
+            'sell'
+            ]
+
+        self.data['signal'] = np.select(conditions_signal, choices_signal, default=None)
+        self.data['signal'] = self.data['signal'].shift(1)
+        return self.data
+
+
+    # def calc_indicator_ma(self, window):
+    #     return self.data['close'].rolling(window=window).mean()
+
+    # def create_signals(self, ma_fast, ma_slow):
+    #     self.data['signal'] = None
+    #     self.data.loc[self.calc_indicator_ma(ma_fast) > self.calc_indicator_ma(ma_slow), 'signal'] = 'buy'  # Buy
+    #     self.data.loc[self.calc_indicator_ma(ma_fast) < self.calc_indicator_ma(ma_slow), 'signal'] = 'sell'  # Sell
+    #     self.data['signal'] = self.data['signal'].shift(1)
+    #     self.data.dropna(inplace=True)
+    #     return self.data
     
     def create_ohlcv(self):
         deals = self.data.groupby((self.data.signal != self.data.signal.shift()).cumsum(), as_index= False).agg(
@@ -88,35 +106,14 @@ class BackTester:
             highest = ('high', 'max'),
             lowest = ('low', 'min')
         )
-        
-        print(deals)
 
         deals['open_price'] = round(deals['open_price'] * price_safety, 5)
         deals['close_price'] = deals['open_price'].shift(-1)
         deals['close_price'].replace(r'\s+|^$', self.data['close'].iloc[-1], regex=True)
         
-        deals.dropna(inplace=True)
+        # deals.dropna(inplace=True)
         
         return deals
-    
-    def calc_max_tp_sl(self):
-        deals = self.create_ohlcv()
-        deals['max_tp_points'] = np.where(deals['signal'] == 'buy', (deals['highest'] - deals['open_price']), 
-                                    (deals['open_price'] - deals['lowest']) ) * self.decimal_factor
-        deals['max_sl_points'] = np.where(deals['signal'] == 'buy', (deals['open_price'] - deals['lowest']) , 
-                                    (deals['highest'] - deals['open_price'])) * self.decimal_factor
-        return deals
-    
-    # def calc_close_price(self, tp, sl):
-    #     deals = self.calc_max_tp_sl()
-        
-    #     self.tp = tp * decimal_factor
-    #     self.sl = sl * decimal_factor
-        
-    #     deals['take_profit'] = self.tp
-    #     deals['stop_loss'] = self.sl
-    #     # if deals['signal'] == 'buy':
-    #     return deals
     
     def apply_profit_dots(self):
         # deals = self.calc_close_price(tp=0, sl=0)
@@ -323,44 +320,16 @@ class BackTester:
                 'count_max_cons_loss',
         ])
         return collection
-    
-    # def backtest(self):
-    #     results =  pd.DataFrame()
-    #     for ma_fast in [10, 20, 50]:
-    #         for ma_slow in [20, 50, 100]:
-    #             self.initial_capital = deposit  # Reset capital for each loop
-    #             self.data = tickers # Reset data for each loop
-    #             self.create_signals(ma_fast, ma_slow)
-    #             roi = (self.initial_capital - 10000) / 10000
-    #             result = self.calc_result(ma_fast, ma_slow)
-    #             # result = pd.DataFrame({'MA_Fast': ma_fast, 'MA_Slow': ma_slow, 'ROI': roi, 'Total_Profit': self.capital - 10000}, index=[0])
-    #             results = results.append(result)
-    #             print(results)
-    #     return results
 
 
 # Nested loop for testing parameters
 results = pd.DataFrame()
 for ma_fast in [10, 20, 50]:
     for ma_slow in [20, 50, 100]:
-        # for take_profit in [0.05, 0.1]:
-        #     for stop_loss in [0.02, 0.03]:
         facts = tickers.copy()  # Reset data for each loop
         fund = deposit # Reset capital for each loop
         backTester = BackTester(data=facts, initial_capital=fund, decimal_factor=decimal_factor, min_lot=0.1, martingale_multiplier=2)
-        backTester.create_signals(ma_fast, ma_slow)
+        backTester.indicator_sma(ma_fast, ma_slow)
+        backTester.create_signals()
         out = backTester.create_ohlcv()
         print(out)
-        # backTester.execute_trades(take_profit, stop_loss)
-        # performance = backTester.calc_result(ma_fast, ma_slow)
-        # results = results.append(performance)
-
-# print('find the result')
-# print(results)
-
-
-
-# results = backTester.backtest()
-
-
-
