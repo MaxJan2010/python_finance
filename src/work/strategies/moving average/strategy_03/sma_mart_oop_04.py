@@ -16,7 +16,7 @@ from IPython.display import display
 deposit = 1000
 decimal_factor = 10000
 price_safety = 0.97
-min_lot = 0.1
+min_lot = 0.01
 volume = 10
 
 # get historical data from MetaTrader5
@@ -54,24 +54,22 @@ filename = datetime.now().strftime('%Y-%m-%d-%H-%M-%S.csv')
 tickers.to_csv('feeds.csv', index = False)  
 
 class BackTester:
-    def __init__(self, data, initial_capital, decimal_factor, min_lot, martingale_multiplier):
+    def __init__(self, data, decimal_factor, min_lot, martingale_multiplier):
         self.data = data
-        self.initial_capital = initial_capital
+        # self.initial_capital = initial_capital
         self.decimal_factor = decimal_factor
         self.min_lot = min_lot
         self.martingale_multiplier = martingale_multiplier
         
     def indicator_sma(self, ma_fast, ma_slow):
-        self.data['v_fast_sma'] = ma_fast
-        self.data['v_slow_sma'] = ma_slow
         self.data['fast_sma'] = self.data['close'].rolling(ma_fast).mean()
         self.data['slow_sma'] = self.data['close'].rolling(ma_slow).mean()
 
         self.data.dropna(inplace=True)
-        print(self.data)
         return self.data
     
     def create_signals(self):
+        self.data = self.indicator_sma(ma_fast, ma_slow)
         conditions_signal = [
             self.data['fast_sma'].gt(self.data['slow_sma']), # up signal
             self.data['fast_sma'].lt(self.data['slow_sma']), # down signal
@@ -99,6 +97,7 @@ class BackTester:
     #     return self.data
     
     def create_ohlcv(self):
+        self.data = self.create_signals()
         deals = self.data.groupby((self.data.signal != self.data.signal.shift()).cumsum(), as_index= False).agg(
             open_time = ('time', 'first'),
             signal = ('signal', 'first'),
@@ -111,12 +110,19 @@ class BackTester:
         deals['close_price'] = deals['open_price'].shift(-1)
         deals['close_price'].replace(r'\s+|^$', self.data['close'].iloc[-1], regex=True)
         
-        # deals.dropna(inplace=True)
+        deals.dropna(inplace=True)
         
         return deals
     
+    def calc_max_tp_sl(self):
+        deals = self.create_ohlcv()
+        deals['max_tp_points'] = np.where(deals['signal'] == 'buy', (deals['highest'] - deals['open_price']) * decimal_factor, 
+                                       (deals['open_price'] - deals['lowest']) * decimal_factor)
+        deals['max_sl_points'] = np.where(deals['signal'] == 'buy', (deals['open_price'] - deals['lowest'])  * decimal_factor, 
+                                       (deals['highest'] - deals['open_price']) * decimal_factor)
+        return deals
+        
     def apply_profit_dots(self):
-        # deals = self.calc_close_price(tp=0, sl=0)
         deals = self.calc_max_tp_sl()
         deals['dots'] = np.where(deals['signal'] == 'buy', deals['close_price'] - deals['open_price'], deals['open_price'] - deals['close_price'])
         deals['points'] = deals['dots'] * self.decimal_factor
@@ -139,22 +145,27 @@ class BackTester:
         deals['lot'] = deals['martingale'] * self.min_lot
         deals['profit'] = deals['points'] * deals['lot'] * volume
         deals['pnl_points'] = deals['points'].cumsum()
-        deals['pnl_value'] = deals['profit'].cumsum() + self.initial_capital
+        deals['pnl_value'] = deals['profit'].cumsum() + deposit
         return deals
     
     def calc_equity(self):
         deals = self.calc_pnl()
-        i = deals.pnl_value.lt(0).idxmax() + 1
-        l = len(deals)
-        negative_value = deals.loc[i - 1, 'pnl_value']
-        deals.loc[i:l,'equity'] = 0
-        deals['equity'] = deals['equity'].fillna(deals.pnl_value)
+        i = deals.pnl_value.lt(0).idxmax()
+        if i != 0:
+            i = i + 1
+            l = len(deals)
+            negative_value = deals.loc[i - 1, 'pnl_value']
+            deals.loc[i:l,'equity'] = 0
+            deals['equity'] = deals['equity'].fillna(deals.pnl_value)
+        else:
+            deals['equity'] = deals['pnl_value']
+        
         return deals
     
     def calc_result(self, ma_fast, ma_slow):
         deals = self.calc_equity()
         
-        # find balance
+        # find gross equity if pnl containing a value less than zero
         equity = round(deals['equity'].iloc[-1], 2)
         
         # find balance
@@ -286,50 +297,31 @@ class BackTester:
         }
         result_df = pd.DataFrame.from_dict(result)
         return result_df
-    
-    def calc_collection(self):
-        collection = pd.DataFrame(columns = [
-                # 'fast_sma': [fast_sma_period], # fast SMA
-                # 'slow_sma': [slow_sma_period], # slow SMA
-                'equity',
-                'deposit', # deposit
-                'balance', # balance
-                'pnl',
-                'gross_profit',
-                'gross_loss',
-                'profit_factor',
-                'max_martingale',
-                'max_win',
-                'max_loss',
-                'total_trades',
-                'count_sell',
-                'count_buy',
-                'count_win',
-                'count_loss',
-                'ave_win',
-                'ave_loss',
-                'max_tp_points',
-                'avg_tp_points',
-                'min_tp_points',
-                'max_sl_points',
-                'avg_sl_points',
-                'min_sl_points',
-                'max_cons_win',
-                'count_max_cons_win',
-                'max_cons_loss',
-                'count_max_cons_loss',
-        ])
-        return collection
-
 
 # Nested loop for testing parameters
 results = pd.DataFrame()
-for ma_fast in [10, 20, 50]:
-    for ma_slow in [20, 50, 100]:
+for ma_fast in np.arange(5, 50, 5):
+    for ma_slow in np.arange(50, 210, 10):
         facts = tickers.copy()  # Reset data for each loop
         fund = deposit # Reset capital for each loop
-        backTester = BackTester(data=facts, initial_capital=fund, decimal_factor=decimal_factor, min_lot=0.1, martingale_multiplier=2)
+        backTester = BackTester(data=facts, decimal_factor=decimal_factor, min_lot=min_lot, martingale_multiplier=2)
         backTester.indicator_sma(ma_fast, ma_slow)
-        backTester.create_signals()
-        out = backTester.create_ohlcv()
-        print(out)
+        result = backTester.calc_result(ma_fast, ma_slow)
+        equity = backTester.calc_equity()
+        # filename = ('ma_fast_' + str(ma_fast) + ' ' + 'ma_slow_' + str(ma_slow) + '.xlsx')
+        # equity.to_excel(filename)  
+        results = results.append(result)
+
+
+results = results[results['equity'] > 0].reset_index(drop=True)
+
+# export dataframe to excel file
+
+# create file name based on current date and time
+filename = datetime.now().strftime('%Y-%m-%d-%H-%M-%S.xlsx')
+
+# export dataframe to excel file
+results.to_excel(filename)  
+
+
+print(results)
