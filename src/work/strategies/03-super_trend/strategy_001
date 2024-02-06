@@ -1,0 +1,57 @@
+import datetime
+import MetaTrader5 as mt5
+import pandas as pd
+import plotly.express as px
+import numpy as np
+import pandas_ta as ta
+
+from datetime import datetime
+from IPython.display import display
+
+# pd.set_option('display.max_colwidth', None)
+# pd.set_option('display.max_rows', None)
+# pd.set_option('display.max_columns', None)
+
+# variables
+deposit = 1000
+decimal_factor = 10000
+price_safety = 0.97
+min_lot = 0.01
+volume = 10
+
+class BackTester:
+    def __init__(self, symbol, timeframe, start_pos, num_bars, decimal_factor, min_lot, martingale_multiplier):
+        self.data = self.get_bars(symbol, timeframe, start_pos, num_bars)  # Get data within constructor
+        self.decimal_factor = decimal_factor
+        self.min_lot = min_lot
+        self.martingale_multiplier = martingale_multiplier
+
+    @classmethod
+    def get_bars(cls, symbol, timeframe, start_pos, num_bars):
+        mt5.initialize()  # Ensure initialization within the function
+        try:
+            bars = mt5.copy_rates_from_pos(symbol, timeframe, start_pos, num_bars)
+            candles = pd.DataFrame(bars)[['time', 'open', 'high', 'low', 'close', 'spread']]
+            candles['time'] = pd.to_datetime(candles['time'], unit='s')
+            return candles
+        except Exception as e:
+            print(f"Error fetching data: {e}")
+            return None  # Handle potential errors
+        
+    def indicator_sma(self, ma_fast, ma_slow):
+        self.data['fast_sma'] = self.data['close'].rolling(ma_fast).mean()
+        self.data['slow_sma'] = self.data['close'].rolling(ma_slow).mean()
+
+        self.data.dropna(inplace=True)
+        return self.data
+        
+backTester = BackTester(symbol='EURUSD', 
+                        timeframe=mt5.TIMEFRAME_H1, 
+                        start_pos=0, 
+                        num_bars=6500,
+                        decimal_factor=10000, 
+                        min_lot=0.1, 
+                        martingale_multiplier=2
+                        )
+
+print(backTester.data)

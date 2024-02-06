@@ -3,6 +3,7 @@ pip install MetaTrader5
 pip install ipykernel
 pip install plotly ipython  --upgrade nbformat
 pip install ipython
+pip install pandas_ta
 
 pip install --upgrade nbformat
 

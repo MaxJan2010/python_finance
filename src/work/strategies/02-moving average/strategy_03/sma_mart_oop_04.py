@@ -41,7 +41,7 @@ class Data:
         return candles
 
 tickers = Data.get_bars(symbol = 'EURUSD', 
-                                timeframe=mt5.TIMEFRAME_H4, 
+                                timeframe=mt5.TIMEFRAME_H1, 
                                 start_pos=0, 
                                 num_bars = 6500)
 
@@ -237,11 +237,11 @@ class BackTester:
         # find min stop loss points
         min_sl_points = round(deals['max_sl_points'].min(), 2)
         
-        # find max take profit points open time
-        df3=deals.loc[deals['max_tp_points'] == deals['max_tp_points'].max(), 'open_time'].item()
+        # # find max take profit points open time
+        # df3=deals.loc[deals['max_tp_points'] == deals['max_tp_points'].max(), 'open_time'].item()
         
-        # find max stop loss points open time
-        df4=deals.loc[deals['max_sl_points'] == deals['max_sl_points'].max(), 'open_time'].item()
+        # # find max stop loss points open time
+        # df4=deals.loc[deals['max_sl_points'] == deals['max_sl_points'].max(), 'open_time'].item()
         
         # Collect consecutive Profit / Loss (Factors)
 
@@ -314,7 +314,7 @@ for ma_fast in np.arange(5, 50, 5):
 
 
 results = results[results['equity'] > 0].reset_index(drop=True)
-
+results = results[results['max_martingale'] <= 128].reset_index(drop=True)
 # export dataframe to excel file
 
 # create file name based on current date and time
