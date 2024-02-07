@@ -38,11 +38,25 @@ class BackTester:
             print(f"Error fetching data: {e}")
             return None  # Handle potential errors
         
-    def indicator_superTrend(self, st_length, st_multiplier):  # st => super trend
-        self.data = ta.supertrend(self.data['high'], self.data['low'], self.data['close'], period=st_length, multiplier=st_multiplier, append=True)
+    def indicator_superTrend(self, period, multiplier):  # st => super trend
+        # Calculate the True Range (TR)
+        self.data['TR'] = pd.concat([
+            self.data['high'] - self.data['low'],
+            abs(self.data['high'] - self.data['close'].shift(1)),
+            abs(self.data['low'] - self.data['close'].shift(1)),
+        ], axis=1).max(axis=1)
 
-        # self.data['fast_sma'] = self.data['close'].rolling(ma_fast).mean()
-        # self.data['slow_sma'] = self.data['close'].rolling(ma_slow).mean()
+        # Calculate the ATR using exponential moving average (EMA)
+        self.data['ATR'] = self.data['TR'].ewm(alpha=1/period, min_periods=period).mean()
+        
+        # Calculate basic upper band & basic lower band
+        self.data['BUB'] = round(((self.data["high"] + self.data["low"]) / 2) + (multiplier * self.data["ATR"]),5)
+        self.data['BLB'] = round(((self.data["high"] + self.data["low"]) / 2) - (multiplier * self.data["ATR"]),5)
+        
+        sti = ta.supertrend(self.data['high'], self.data['low'], self.data['close'], length=7, multiplier=3)
+        print(sti)
+
+
 
         # self.data.dropna(inplace=True)
         return self.data
@@ -55,6 +69,6 @@ backTester = BackTester(symbol='EURUSD',
                         min_lot=0.1, 
                         martingale_multiplier=2
                         )
-backTester.indicator_superTrend(st_length=7, st_multiplier=3)
+backTester.indicator_superTrend(period=7, multiplier=3)
 
 print(backTester.data)
