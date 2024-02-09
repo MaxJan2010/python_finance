@@ -9,7 +9,7 @@ from datetime import datetime
 from IPython.display import display
 
 # pd.set_option('display.max_colwidth', None)
-# pd.set_option('display.max_rows', None)
+pd.set_option('display.max_rows', None)
 # pd.set_option('display.max_columns', None)
 
 # variables
@@ -39,28 +39,234 @@ class BackTester:
             return None  # Handle potential errors
         
     def indicator_superTrend(self, period, multiplier):  # st => super trend
-        # Calculate the True Range (TR)
-        self.data['TR'] = pd.concat([
-            self.data['high'] - self.data['low'],
-            abs(self.data['high'] - self.data['close'].shift(1)),
-            abs(self.data['low'] - self.data['close'].shift(1)),
-        ], axis=1).max(axis=1)
-
-        # Calculate the ATR using exponential moving average (EMA)
-        self.data['ATR'] = self.data['TR'].ewm(alpha=1/period, min_periods=period).mean()
+        st_col_name = 'SUPERT_' + str(period) + '_' + str(float(multiplier))
         
-        # Calculate basic upper band & basic lower band
-        self.data['BUB'] = round(((self.data["high"] + self.data["low"]) / 2) + (multiplier * self.data["ATR"]),5)
-        self.data['BLB'] = round(((self.data["high"] + self.data["low"]) / 2) - (multiplier * self.data["ATR"]),5)
-        
-        sti = ta.supertrend(self.data['high'], self.data['low'], self.data['close'], length=7, multiplier=3)
-        print(sti)
+        self.data['super_trend'] = ta.supertrend(self.data['high'], self.data['low'], self.data['close'], 
+                                                 length=period, multiplier=multiplier)[st_col_name]
 
-
-
-        # self.data.dropna(inplace=True)
+        self.data.dropna(inplace=True)
         return self.data
+    
+    def create_signals(self):
+        # self.data = self.indicator_superTrend(period, multiplier)
+        self.data['HL/2'] = (self.data['high'] + self.data['low']) / 2
+        conditions_signal = [
+            self.data['HL/2'].gt(self.data['super_trend']), # up signal
+            self.data['HL/2'].lt(self.data['super_trend']), # down signal
+        ]
+
+        choices_signal = [
+            'buy', 
+            'sell'
+            ]
+
+        self.data['signal'] = np.select(conditions_signal, choices_signal, default=None)
+        self.data['signal'] = self.data['signal'].shift(1)
+        return self.data
+    
+    def create_ohlcv(self):
+        self.data = self.create_signals()
+        deals = self.data.groupby((self.data.signal != self.data.signal.shift()).cumsum(), as_index= False).agg(
+            open_time = ('time', 'first'),
+            signal = ('signal', 'first'),
+            open_price = ('open', 'first'),
+            highest = ('high', 'max'),
+            lowest = ('low', 'min')
+        )
+
+        deals['open_price'] = round(deals['open_price'] * price_safety, 5)
+        deals['close_price'] = deals['open_price'].shift(-1)
+        deals['close_price'].replace(r'\s+|^$', self.data['close'].iloc[-1], regex=True)
         
+        deals.dropna(inplace=True)
+        
+        return deals
+    
+    def calc_max_tp_sl(self):
+        deals = self.create_ohlcv()
+        deals['max_tp_points'] = np.where(deals['signal'] == 'buy', (deals['highest'] - deals['open_price']) * decimal_factor, 
+                                       (deals['open_price'] - deals['lowest']) * decimal_factor)
+        deals['max_sl_points'] = np.where(deals['signal'] == 'buy', (deals['open_price'] - deals['lowest'])  * decimal_factor, 
+                                       (deals['highest'] - deals['open_price']) * decimal_factor)
+        return deals
+        
+    def apply_profit_dots(self):
+        deals = self.calc_max_tp_sl()
+        deals['dots'] = np.where(deals['signal'] == 'buy', deals['close_price'] - deals['open_price'], deals['open_price'] - deals['close_price'])
+        deals['points'] = deals['dots'] * self.decimal_factor
+        deals['type'] = np.where(deals['dots'] > 0, 'win', 'loss')
+        deals.reset_index(drop=True, inplace=True)
+        return deals
+    
+    def calc_martingale(self):
+        deals = self.apply_profit_dots()
+        deals["martingale"] = 1
+        for i in range(1, len(deals)):
+            if deals.loc[i - 1, "type"] == "win":
+                deals.loc[i, "martingale"] = 1
+            else:
+                deals.loc[i, "martingale"] = deals.loc[i - 1, "martingale"] * self.martingale_multiplier
+        return deals
+    
+    def calc_pnl(self):
+        deals = self.calc_martingale()
+        deals['lot'] = deals['martingale'] * self.min_lot
+        deals['profit'] = deals['points'] * deals['lot'] * volume
+        deals['pnl_points'] = deals['points'].cumsum()
+        deals['pnl_value'] = deals['profit'].cumsum() + deposit
+        return deals
+    
+    def calc_equity(self):
+        deals = self.calc_pnl()
+        i = deals.pnl_value.lt(0).idxmax()
+        if i != 0:
+            i = i + 1
+            l = len(deals)
+            negative_value = deals.loc[i - 1, 'pnl_value']
+            deals.loc[i:l,'equity'] = 0
+            deals['equity'] = deals['equity'].fillna(deals.pnl_value)
+        else:
+            deals['equity'] = deals['pnl_value']
+        
+        return deals
+    
+    def calc_result(self, period, multiplier):
+        deals = self.calc_equity()
+        
+        # find gross equity if pnl containing a value less than zero
+        equity = round(deals['equity'].iloc[-1], 2)
+        
+        # find balance
+        balance = round(deals['pnl_value'].iloc[-1], 2)
+
+        # find total net profit
+        total_net_profit = round(deals['profit'].sum(), 2)  # Use in backtest Factors
+
+        # find gross profit
+        gross_profit = round(sum(deals[deals['type']=='win']['profit']), 2)
+
+        # find gross loss
+        gross_loss = round(sum(deals[deals['type']=='loss']['profit']), 2)
+        
+        # find maximum martingale multiplier factor
+        max_martingale = round(deals['martingale'].max(), 2)
+
+        # find profit factor
+        profit_factor = abs(round((gross_profit / gross_loss), 2))
+        
+        # find largest profit trade
+        largest_profit_trade = round(deals['profit'].max(), 2)
+        
+        # find largest profit trade
+        df2=deals.loc[deals['profit'] == deals['profit'].max(), 'open_time'].item()
+
+        # find largest loss trade
+        largest_loss_trade = round(deals['profit'].min(), 2)
+
+        # find total trades
+        total_trades = len(deals)
+
+        # find total count of SELL trades
+        count_sell_trades = deals['signal'].value_counts()['sell']
+
+        # find total count of BUY trades
+        count_buy_trades = deals['signal'].value_counts()['buy']
+
+        # find total count of WIN trades
+        count_win_trades = deals['type'].value_counts()['win']
+        
+        # find total count of LOSS trades
+        count_loss_trades = deals['type'].value_counts()['loss']
+
+        # select rows by value
+        # avg_win = deals_group.loc[deals_group['profit_type'] == 'win']
+
+        # find average value of WIN Trades
+        ave_win_value = round(deals.loc[deals['type'] == 'win']['profit'].mean() , 2)
+
+        # find average value of LOSS Trades
+        ave_loss_value = round(deals.loc[deals['type'] == 'loss']['profit'].mean(), 2)
+        
+        # find max take profit points
+        max_tp_points = round(deals['max_tp_points'].max(), 2)
+    
+        # find average take profit points
+        avg_tp_points = round(deals['max_tp_points'].mean(), 2)
+        
+        # find min take profit points
+        min_tp_points = round(deals['max_tp_points'].min(), 2)
+        
+        # find max stop loss points
+        max_sl_points = round(deals['max_sl_points'].max(), 2)
+        
+        # find average stop loss points
+        avg_sl_points = round(deals['max_sl_points'].mean(), 2)
+        
+        # find min stop loss points
+        min_sl_points = round(deals['max_sl_points'].min(), 2)
+        
+        # # find max take profit points open time
+        # df3=deals.loc[deals['max_tp_points'] == deals['max_tp_points'].max(), 'open_time'].item()
+        
+        # # find max stop loss points open time
+        # df4=deals.loc[deals['max_sl_points'] == deals['max_sl_points'].max(), 'open_time'].item()
+        
+        # Collect consecutive Profit / Loss (Factors)
+
+        # find consecutive Profit / Loss
+        positions_group = deals.groupby((deals.type != deals.type.shift()).cumsum()).agg(
+        type = ('type', 'first'),
+        grand_profit = ('profit', 'sum'),
+        grand_points = ('points', 'sum'),
+        count = ('type', 'count')
+        ).reset_index(drop=True)
+
+        # find largest consecutive WIN trade
+        largest_cons_win = round(positions_group['grand_profit'].max(), 2)
+        # find largest consecutive WIN trade (count)
+        count_largest_win = positions_group.loc[positions_group['grand_profit'].idxmax(), 'count']
+
+        # find largest consecutive LOSS trade
+        largest_cons_loss = round(positions_group['grand_profit'].min(), 2)
+
+        # find largest consecutive LOSS trade (count)
+        count_largest_loss = positions_group.loc[positions_group['grand_profit'].idxmin(), 'count']
+        
+        result = {
+            'period': [period], # super trend period
+            'multiplier': [multiplier], # super trend multiplier
+            'equity': [equity],
+            'deposit': [deposit], # deposit
+            'balance': [balance], # balance
+            'pnl': [total_net_profit],
+            'gross_profit': [gross_profit],
+            'gross_loss': [gross_loss],
+            'profit_factor': [profit_factor],
+            'max_martingale': [max_martingale],
+            'max_win': [largest_profit_trade],
+            'max_loss': [largest_loss_trade],
+            'total_trades': [total_trades],
+            'count_sell': [count_sell_trades],
+            'count_buy': [count_buy_trades],
+            'count_win': [count_win_trades],
+            'count_loss': [count_loss_trades],
+            'ave_win': [ave_win_value],
+            'ave_loss': [ave_loss_value],
+            'max_tp_points': [max_tp_points],
+            'avg_tp_points': [avg_tp_points],
+            'min_tp_points': [min_tp_points],
+            'max_sl_points': [max_sl_points],
+            'avg_sl_points': [avg_sl_points],
+            'min_sl_points': [min_sl_points],
+            'max_cons_win': [largest_cons_win],
+            'count_max_cons_win': [count_largest_win],
+            'max_cons_loss': [largest_cons_loss],
+            'count_max_cons_loss': [count_largest_loss],
+        }
+        result_df = pd.DataFrame.from_dict(result)
+        return result_df
+
+results = pd.DataFrame()
 backTester = BackTester(symbol='EURUSD', 
                         timeframe=mt5.TIMEFRAME_H1, 
                         start_pos=0, 
@@ -69,6 +275,11 @@ backTester = BackTester(symbol='EURUSD',
                         min_lot=0.1, 
                         martingale_multiplier=2
                         )
-backTester.indicator_superTrend(period=7, multiplier=3)
 
-print(backTester.data)
+backTester.indicator_superTrend(period=7, multiplier=3)
+backTester.create_signals()
+result = backTester.calc_result(period=7, multiplier=3)
+results = results.append(result)
+# print(backTester.data.tail(100))
+print(results)
+
